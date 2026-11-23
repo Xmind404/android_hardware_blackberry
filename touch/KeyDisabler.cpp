@@ -1,69 +1,52 @@
 /*
- * Copyright (C) 2019 The LineageOS Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: 2019-2026 The LineageOS Project
+ * SPDX-License-Identifier: Apache-2.0
  */
+
+#define LOG_TAG "vendor.lineage.touch-service.blackberry"
+
+#include "KeyDisabler.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/strings.h>
 
-#include "KeyDisabler.h"
+namespace {
 
+constexpr const char* kControlPath = "/sys/devices/virtual/tp_device/tp_button/button_enable";
+
+}  // anonymous namespace
+
+namespace aidl {
 namespace vendor {
 namespace lineage {
 namespace touch {
-namespace V1_0 {
-namespace implementation {
 
-constexpr const char kControlPath[] = "/sys/devices/virtual/tp_device/tp_button/button_enable";
-
-KeyDisabler::KeyDisabler() {
-    mHasKeyDisabler = !access(kControlPath, F_OK);
-}
-
-// Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
-Return<bool> KeyDisabler::isEnabled() {
+// "Enabled" means the capacitive navigation keys are disabled, i.e. the
+// driver's button_enable node reads 0.
+ndk::ScopedAStatus KeyDisabler::getEnabled(bool* _aidl_return) {
     std::string val;
 
     if (!android::base::ReadFileToString(kControlPath, &val)) {
-        PLOG(ERROR) << "Failed to read button_enable";
-        return false;
+        PLOG(ERROR) << "Failed to read " << kControlPath;
+        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
     }
 
-    android::base::Trim(val);
-
-    // not sure if this is needed but it seemed to fail without it
-    if (val == "0x0") {
-        return true;
-    }
-
-    return false;
+    // The driver reports its state as a hexadecimal string.
+    *_aidl_return = android::base::Trim(val) == "0x0";
+    return ndk::ScopedAStatus::ok();
 }
 
-Return<bool> KeyDisabler::setEnabled(bool enabled) {
-    std::string val = enabled ? "0" : "1";
-
-    bool ok = android::base::WriteStringToFile(val, kControlPath);
-    if (!ok) {
-        PLOG(ERROR) << "Failed to write button_enable";
+ndk::ScopedAStatus KeyDisabler::setEnabled(bool enabled) {
+    if (!android::base::WriteStringToFile(enabled ? "0" : "1", kControlPath)) {
+        PLOG(ERROR) << "Failed to write " << kControlPath;
+        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
     }
 
-    return ok;
+    return ndk::ScopedAStatus::ok();
 }
 
-}  // namespace implementation
-}  // namespace V1_0
 }  // namespace touch
 }  // namespace lineage
 }  // namespace vendor
+}  // namespace aidl
